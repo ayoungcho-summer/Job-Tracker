@@ -4,8 +4,9 @@ import type { Prospect } from "@shared/schema";
 import { STATUSES, INTEREST_LEVELS } from "@shared/schema";
 import { ProspectCard } from "@/components/prospect-card";
 import { AddProspectForm } from "@/components/add-prospect-form";
-import { Briefcase, Plus } from "lucide-react";
+import { Briefcase, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -32,10 +33,12 @@ function KanbanColumn({
   status,
   prospects,
   isLoading,
+  hasActiveSearch,
 }: {
   status: string;
   prospects: Prospect[];
   isLoading: boolean;
+  hasActiveSearch: boolean;
 }) {
   const [interestFilter, setInterestFilter] = useState<InterestFilter>("All");
 
@@ -45,6 +48,13 @@ function KanbanColumn({
       : prospects.filter((p) => p.interestLevel === interestFilter);
 
   const columnSlug = status.replace(/\s+/g, "-").toLowerCase();
+
+  const emptyMessage =
+    interestFilter !== "All"
+      ? `No ${interestFilter} interest prospects`
+      : hasActiveSearch
+        ? "No matching prospects"
+        : "No prospects";
 
   return (
     <div
@@ -92,9 +102,7 @@ function KanbanColumn({
               className="flex flex-col items-center justify-center py-8 text-center"
               data-testid={`empty-${columnSlug}`}
             >
-              <p className="text-xs text-muted-foreground">
-                {interestFilter === "All" ? "No prospects" : `No ${interestFilter} interest prospects`}
-              </p>
+              <p className="text-xs text-muted-foreground">{emptyMessage}</p>
             </div>
           ) : (
             filteredProspects.map((prospect) => (
@@ -109,14 +117,23 @@ function KanbanColumn({
 
 export default function Home() {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const { data: prospects, isLoading } = useQuery<Prospect[]>({
     queryKey: ["/api/prospects"],
   });
 
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const visibleProspects = normalizedSearch
+    ? (prospects ?? []).filter((p) =>
+        p.companyName.toLowerCase().includes(normalizedSearch),
+      )
+    : (prospects ?? []);
+
   const groupedByStatus = STATUSES.reduce(
     (acc, status) => {
-      acc[status] = (prospects ?? []).filter((p) => p.status === status);
+      acc[status] = visibleProspects.filter((p) => p.status === status);
       return acc;
     },
     {} as Record<string, Prospect[]>,
@@ -142,6 +159,29 @@ export default function Home() {
                 </p>
               </div>
             </div>
+
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                type="search"
+                placeholder="Search company..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 pr-8 h-8 text-sm"
+                data-testid="input-search-company"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-clear-search"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" data-testid="button-add-prospect">
@@ -168,6 +208,7 @@ export default function Home() {
               status={status}
               prospects={groupedByStatus[status] || []}
               isLoading={isLoading}
+              hasActiveSearch={normalizedSearch.length > 0}
             />
           ))}
         </div>
